@@ -1,0 +1,5 @@
+- hosts: '{{ MYHOSTS }}'
+  become: true
+  roles:
+    - kafka_deploy
+    

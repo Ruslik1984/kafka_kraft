@@ -1,0 +1,171 @@
+---
+# - name: Очищаю временные файлы
+#   ansible.builtin.file:
+#     path: /tmp/java.tar.gz
+#     state: absent
+
+# - name: Проверяю, установлена ли Java
+#   ansible.builtin.stat:
+#     path: "/opt/jdk-{{ JAVA_VERSION }}"
+#   register: java_dir_check
+
+# - name: "Загружаю JDK"
+#   ansible.builtin.get_url:
+#     url: "{{ JRE_URL[JAVA_VERSION] }}"
+#     dest: /tmp/java.tar.gz
+#     mode: '0755'
+#     force: true
+#   #when: not java_dir_check.stat.exists or java_force_reinstall
+
+# - name: Распаковываю JDK
+#   ansible.builtin.unarchive:
+#     src: /tmp/java.tar.gz
+#     dest: /tmp
+#     owner: root
+#     remote_src: yes
+
+# - name: "Очищаю папку с JDK"
+#   ansible.builtin.file:
+#     path: "/opt/jdk-{{ JAVA_VERSION }}"
+#     state: absent  
+
+# - name: Перемещаю папку
+#   ansible.builtin.shell: "mv /tmp/jdk-{{ JAVA_VERSION }} /opt/"
+
+# - name: "Создаю симлинки"
+#   ansible.builtin.file:
+#     src: /opt/jdk-{{ JAVA_VERSION }}
+#     dest: /opt/java
+#     force: yes
+#     state: link
+
+# - name: Настраиваю переменные среды
+#   ansible.builtin.copy:
+#     src: files/java.sh
+#     dest: /etc/profile.d/java.sh
+#     mode: 755
+#     owner: root
+
+# - name: Очищаю временные файлы
+#   ansible.builtin.file:
+#     path: /tmp/java.tar.gz
+#     state: absent
+
+
+
+- name: Проверяю, установлена ли Kafka
+  ansible.builtin.stat:
+    path: "{{ kafka_root_dir }}"
+  register: check_dir_result
+
+- name: Очищаю временные файлы
+  ansible.builtin.file:
+    path: "{{ kafka_root_dir }}"
+    state: absent
+ 
+
+- name: "Загружаю Kafka"
+  ansible.builtin.get_url:
+    url: "{{ kafka_url }}"
+    dest: /tmp/kafka.tar.gz
+    mode: '0755'
+    force: true
+
+- name: Распаковываю Kafka
+  ansible.builtin.unarchive:
+    src: /tmp/kafka.tar.gz
+    dest: /tmp
+    remote_src: yes
+
+- name: Перемещаю папку
+  ansible.builtin.shell: "mv /tmp/kafka_{{ scala_version }}-{{ kafka_version }} {{ kafka_root_dir }}"
+
+
+- name: Очищаю временные файлы
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/kafka.tar.gz
+    - "/tmp/kafka_{{ scala_version }}-{{ kafka_version }}"
+
+- name: Создаю kafka group
+  ansible.builtin.group:
+    name: '{{ kafka_group }}'
+    state: present
+
+- name: Создаю kafka user
+  ansible.builtin.user:
+    name: '{{ kafka_user }}'
+    group: '{{ kafka_group }}'
+    state: present
+    createhome: no
+
+- name: Создаю root directory for kafka
+  ansible.builtin.file:
+    path: "{{ kafka_root_dir }}"
+    state: directory
+    group: '{{ kafka_group }}'
+    owner: '{{ kafka_user }}'
+
+- name: Создаю папку data/logs
+  ansible.builtin.file:
+    path: "{{ kafka_root_dir }}/data/logs"
+    state: directory
+    group: '{{ kafka_group }}'
+    owner: '{{ kafka_user }}'
+
+- name: Template kafka systemd unit file
+  ansible.builtin.template:
+    src: templates/confluent-server.service.j2
+    dest: /usr/lib/systemd/system/confluent-server.service
+    owner: root
+    group: root
+    mode: 0644
+  notify: reload systemd
+
+- name: Template kafka systemd file
+  ansible.builtin.template:
+    src: templates/server.properties.j2
+    dest: "{{ kafka_root_dir }}/config/kraft/server.properties"
+    owner: root
+    group: root
+    mode: 0644
+  notify: Restart Kafka
+
+- name: add kafka bin path to all users' PATH
+  ansible.builtin.template:
+    src: ../templates/kafka_path.sh.j2
+    dest: /etc/profile.d/kafka_path.sh
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Генерируем папку kafka_cluster_id
+  ansible.builtin.shell: /opt/kafka/bin/kafka-storage.sh random-uuid
+  environment:
+    JAVA_HOME: /opt/java
+  register: generate_out
+  run_once: true
+
+- debug:
+    msg: "{{ generate_out }}"
+
+- name: check if kraft logs dir has been initialized
+  ansible.builtin.shell: "{{ kafka_root_dir }}/bin/kafka-storage.sh info -c {{ kafka_root_dir }}/config/kraft/server.properties"
+  environment:
+    JAVA_HOME: /opt/java
+  register: storage_init
+  ignore_errors: yes
+
+- name: init kraft logs dir
+  ansible.builtin.shell: "{{ kafka_root_dir }}/bin/kafka-storage.sh format -t {{ generate_out.stdout }} -c {{ kafka_root_dir}}/config/kraft/server.properties"
+  environment:
+    JAVA_HOME: /opt/java
+  when: '"is not formatted" in storage_init.stdout'
+  
+
+- name: start and enable kafka service
+  ansible.builtin.systemd:
+    name: confluent-server
+    state: started

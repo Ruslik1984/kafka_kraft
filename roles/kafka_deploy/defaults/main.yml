@@ -1,0 +1,18 @@
+---
+kafka_group: kafka
+kafka_user: kafka
+kafka_root_dir: /opt/kafka
+kafka_version: 3.8.0
+scala_version: 2.13
+kafka_url: https://dlcdn.apache.org/kafka/{{ kafka_version }}/kafka_{{ scala_version }}-{{ kafka_version }}.tgz
+kernel_tuning_type: kafka
+kafka_advertised_listeners: false
+JRE_URL:
+  8: https://download.java.net/openjdk/jdk8u41/ri/openjdk_jre_ri-8u41-b04-linux-i586-14_jan_2020.tar.gz
+  11: https://download.java.net/openjdk/jdk11/ri/openjdk-11+28_linux-x64_bin.tar.gz
+  13: https://download.java.net/openjdk/jdk13/ri/openjdk-13+33_linux-x64_bin.tar.gz
+  17: https://download.java.net/openjdk/jdk17/ri/openjdk-17+35_linux-x64_bin.tar.gz
+  18: https://download.java.net/openjdk/jdk18/ri/openjdk-18+36_linux-x64_bin.tar.gz
+
+JAVA_VERSION: 18
+java_force_reinstall: false
